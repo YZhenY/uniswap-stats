@@ -21,6 +21,9 @@ interface PositionHistoryEntry {
   poolPair?: string;
   apy?: string;
   timestamp: number;
+  lowerPrice?: number;
+  upperPrice?: number;
+  currentPrice?: number;
 }
 
 const LOCAL_STORAGE_KEY = 'uniswap-stats-position-history';
@@ -42,6 +45,13 @@ const App = () => {
       try {
         const parsedHistory = JSON.parse(savedHistory) as PositionHistoryEntry[];
         setPositionHistory(parsedHistory);
+        
+        // Refresh price data for the first position if available
+        if (parsedHistory.length > 0) {
+          const firstPos = parsedHistory[0];
+          console.log('Auto-loading first position to get price data:', firstPos.positionId);
+          handleSelectPosition(firstPos.positionId, firstPos.chainId);
+        }
       } catch (error) {
         console.error('Failed to parse position history:', error);
       }
@@ -264,12 +274,28 @@ const App = () => {
   
   // Helper function to update position history
   const updatePositionHistory = (posId: string, chainId: string, poolPairString: string, apyString: string) => {
+    // Extract price data if available
+    let lowerPrice, upperPrice, currentPrice;
+    if (stats) {
+      try {
+        // Extract prices from stats
+        lowerPrice = parseFloat(stats.lowerTickPrice.toSignificant(6));
+        upperPrice = parseFloat(stats.upperTickPrice.toSignificant(6));
+        currentPrice = parseFloat(stats.currentPrice.toSignificant(6));
+      } catch (error) {
+        console.error('Error extracting price data for history:', error);
+      }
+    }
+    
     const newEntry: PositionHistoryEntry = {
       positionId: posId,
       chainId: chainId,
       poolPair: poolPairString,
       apy: apyString,
-      timestamp: Date.now()
+      timestamp: Date.now(),
+      lowerPrice,
+      upperPrice,
+      currentPrice
     };
     
     // Remove any existing entry for the same position and chain
@@ -292,6 +318,23 @@ const App = () => {
       console.error('Failed to save position history to localStorage:', error);
     }
   }
+  
+  // Function to remove a position from history
+  const removePositionFromHistory = (posId: string, chainId: string) => {
+    // Filter out the position to be removed
+    const updatedHistory = positionHistory.filter(
+      entry => !(entry.positionId === posId && entry.chainId === chainId)
+    );
+    
+    setPositionHistory(updatedHistory);
+    
+    // Update localStorage
+    try {
+      localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(updatedHistory));
+    } catch (error) {
+      console.error('Failed to save updated position history to localStorage:', error);
+    }
+  }
 
   return (
     <div className="App">
@@ -300,7 +343,8 @@ const App = () => {
       {/* Display Position History */}
       <PositionHistory 
         positions={positionHistory} 
-        onPositionSelect={handleSelectPosition} 
+        onPositionSelect={handleSelectPosition}
+        onPositionRemove={removePositionFromHistory}
       />
       <div style={{ marginBottom: '20px' }}>
         <label style={{ marginRight: '10px' }}>Select Chain:</label>
