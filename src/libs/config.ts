@@ -16,7 +16,7 @@ export const CHAINS: Record<string, ChainConfig> = {
   ethereum: {
     name: 'Ethereum',
     rpcUrl:
-      'https://blockchain.googleapis.com/v1/projects/tidy-gravity-386108/locations/asia-east1/endpoints/ethereum-mainnet/rpc?key=AIzaSyCAJf_X_coik3gf3tpxHw0ANb4DabNmOcI', // Replace with your Ethereum RPC URL if you have one
+      'https://mainnet.infura.io/v3/bed3d13c6bb948b99430721f466e6101', // Using Infura API with provided key
     poolFactoryAddress: '0x1F98431c8aD98523631AE4a59f267346ea31F984',
     positionManagerAddress: '0xC36442b4a4522E871399CD717aBDD847Ab11FE88',
   },
