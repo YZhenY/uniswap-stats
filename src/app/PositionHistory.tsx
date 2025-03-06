@@ -29,7 +29,10 @@ const PositionHistory: React.FC<PositionHistoryProps> = ({ positions, onPosition
           >
             <div className="position-id">
               <span className="chain-badge">{CHAINS[pos.chainId]?.name}</span>
-              Position #{pos.positionId}
+            </div>
+            <div className="position-number">
+              <span>ID: </span>
+              <span className="position-number-value">{pos.positionId}</span>
             </div>
             {pos.poolPair && (
               <div className="pool-pair">
