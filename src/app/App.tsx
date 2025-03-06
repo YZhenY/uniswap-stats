@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react'
 import './App.css'
-import { getLiquidityPositionStats } from '../libs/stats'
+import { getPositionStatsWithCache } from '../libs/stats'
 import { getProvider } from '../libs/provider'
 import {
   formatBaseCurrencyPrice,
@@ -191,7 +191,8 @@ const App = () => {
       const provider = getProvider(chainId)
       console.log('Provider obtained:', provider)
       
-      const stats = await getLiquidityPositionStats(
+      // Use the cached version for better performance
+      const stats = await getPositionStatsWithCache(
         provider,
         posId,
         chainId

@@ -24,3 +24,16 @@ export const CHAINS: Record<string, ChainConfig> = {
 
 // Default chain
 export const DEFAULT_CHAIN = 'base'
+
+// Database config
+export const DB_CONFIG = {
+  enabled: true,  // Set to false to disable database persistence
+  uri: process.env.MONGO_URI || 'mongodb://admin:password@localhost:27017/uniswap_stats?authSource=admin',
+}
+
+// Cache config
+export const CACHE_CONFIG = {
+  ttl: parseInt(process.env.CACHE_TTL || '3600'), // Default: 1 hour
+  checkPeriod: parseInt(process.env.CACHE_CHECK_PERIOD || '600'), // Default: 10 minutes
+  useDb: true, // Whether to use database for cache persistence
+}

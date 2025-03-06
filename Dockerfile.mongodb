@@ -1,0 +1,18 @@
+FROM mongo:latest
+
+# Copy custom configuration if needed
+# COPY mongod.conf /etc/mongod.conf
+
+# Set environment variables
+ENV MONGO_INITDB_ROOT_USERNAME=admin
+ENV MONGO_INITDB_ROOT_PASSWORD=password
+ENV MONGO_INITDB_DATABASE=uniswap_stats
+
+# Copy initialization script
+COPY mongo-init.js /docker-entrypoint-initdb.d/
+
+# Expose default MongoDB port
+EXPOSE 27017
+
+# Command to run when container starts
+CMD ["mongod"]

@@ -18,6 +18,7 @@ import {
 import { tickToPrice } from '@uniswap/v3-sdk'
 import { CurrencyAmount, Fraction, Price } from '@uniswap/sdk-core'
 
+// Original implementation
 export async function getLiquidityPositionStats(
   provider: providers.Provider,
   positionId: BigNumberish,
@@ -255,3 +256,12 @@ export async function getLiquidityPositionStats(
     throw error;
   }
 }
+
+// Import the caching middleware
+import { initializeCachedFunctions, getCachedLiquidityPositionStats } from './db/middleware';
+
+// Initialize the cached version with the original function
+initializeCachedFunctions(getLiquidityPositionStats);
+
+// Export the cached version as the default
+export { getCachedLiquidityPositionStats as getPositionStatsWithCache };
