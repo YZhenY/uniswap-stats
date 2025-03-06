@@ -8,7 +8,7 @@ import {
   toQuoteCurrencyAmount,
 } from '../libs/util/uniswap'
 import { LiquidityPositionStats } from '../libs/types'
-import { Fraction, Token } from '@uniswap/sdk-core'
+import { CurrencyAmount, Fraction, Token } from '@uniswap/sdk-core'
 import { CHAINS, DEFAULT_CHAIN } from '../libs/config'
 
 /* eslint-disable */
@@ -27,9 +27,27 @@ const App = () => {
 
     const aprFormatted = (() => {
       const apr = stats.yieldPerDay.map((v, i) => {
-        return {
-          value: v.divide(stats.deposited[i]).multiply(365).asFraction,
-          currency: v.currency,
+        try {
+          // Check if deposit is zero or extremely small to avoid division by zero
+          if (stats.deposited[i].equalTo(CurrencyAmount.fromRawAmount(stats.deposited[i].currency, 0)) || 
+              stats.deposited[i].lessThan(CurrencyAmount.fromRawAmount(stats.deposited[i].currency, 1))) {
+            console.log(`UI: Skipping APR calculation for zero or near-zero deposit at index ${i}`);
+            return {
+              value: new Fraction(0, 1),
+              currency: v.currency,
+            };
+          }
+          
+          return {
+            value: v.divide(stats.deposited[i]).multiply(365).asFraction,
+            currency: v.currency,
+          };
+        } catch (error) {
+          console.error(`UI: Error calculating APR at index ${i}:`, error);
+          return {
+            value: new Fraction(0, 1),
+            currency: v.currency,
+          };
         }
       })
 
@@ -41,9 +59,23 @@ const App = () => {
         stats.deposited,
         stats.avgDepositPrice
       )
-      const aprQuoteAmount = yieldPerDayQuoteAmount
-        .divide(depositedQuoteAmount)
-        .multiply(365).asFraction
+      // Add safety check to prevent division by zero when calculating aprQuoteAmount
+      let aprQuoteAmount: Fraction;
+      try {
+        // Check if depositedQuoteAmount is zero or extremely small
+        if (depositedQuoteAmount.equalTo(CurrencyAmount.fromRawAmount(depositedQuoteAmount.currency, 0)) || 
+            depositedQuoteAmount.lessThan(CurrencyAmount.fromRawAmount(depositedQuoteAmount.currency, 1))) {
+          console.log('UI: Skipping quote APR calculation for zero or near-zero deposit');
+          aprQuoteAmount = new Fraction(0, 1);
+        } else {
+          aprQuoteAmount = yieldPerDayQuoteAmount
+            .divide(depositedQuoteAmount)
+            .multiply(365).asFraction;
+        }
+      } catch (error) {
+        console.error('UI: Error calculating quote APR:', error);
+        aprQuoteAmount = new Fraction(0, 1);
+      }
       const fmtApr = (apr: { value: Fraction; currency: Token }) =>
         `${apr.value.multiply(100).toFixed(2)}% ${apr.currency.symbol}`
       return `${apr.map(fmtApr).join(' ')} (= ${fmtApr({
@@ -107,15 +139,23 @@ const App = () => {
     } catch (error: any) {
       console.error('Error fetching stats:', error)
       
-      // Check for specific error messages related to position not existing
+      // Check for specific error types and messages
       if (error.code === 'POSITION_NOT_FOUND' || 
           error.code === 'POSITION_DATA_ERROR' ||
           (error.message && error.message.includes('call revert exception')) ||
           (error.message && error.message.includes('does not exist on this network')) ||
           (error.message && error.message.includes('data cannot be retrieved'))) {
-        alert(`Position ID ${positionId} cannot be accessed on the ${CHAINS[selectedChain].name} network. \n\nPlease try a different position ID or switch to a different network.`)
-      } else {
-        alert(`Error fetching stats: ${error.message || String(error)}`)
+        alert(`Position ID ${positionId} cannot be accessed on the ${CHAINS[selectedChain].name} network. \n\nPlease try a different position ID or switch to a different network.`);
+      } 
+      // Handle division by zero errors
+      else if (error.message && (error.message.includes('Division by zero') || 
+                error.message.includes('division by zero'))) {
+        console.error('Division by zero error in calculations:', error);
+        alert(`Error calculating statistics for position ID ${positionId}: Division by zero error. \n\nThis usually happens with positions that have zero or extremely small deposits. Try a different position.`);
+      } 
+      // Other errors
+      else {
+        alert(`Error fetching stats: ${error.message || String(error)}`);
       }
       
       setStats(null)

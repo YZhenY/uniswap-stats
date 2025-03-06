@@ -14,7 +14,7 @@ import {
   toQuoteCurrencyAmount,
 } from './util/uniswap'
 import { tickToPrice } from '@uniswap/v3-sdk'
-import { Price } from '@uniswap/sdk-core'
+import { CurrencyAmount, Fraction, Price } from '@uniswap/sdk-core'
 
 export async function getLiquidityPositionStats(
   provider: providers.Provider,
@@ -153,15 +153,36 @@ export async function getLiquidityPositionStats(
   })()
   const durationPositionHeld = (() => {
     const endDate = withdrawnRaw.dateLastWithdrawn || new Date()
-    return endDate.getTime() - depositedRaw.dateFirstDeposited.getTime()
+    const duration = endDate.getTime() - depositedRaw.dateFirstDeposited.getTime()
+    // Make sure duration is at least one day to avoid extremely high yields
+    return duration <= 0 ? 86_400_000 : duration
   })()
-  const yieldPerDay = totalYield.map((v) =>
-    v.multiply(86_400_000).divide(durationPositionHeld)
-  )
+  
+  // Calculate yield per day with safety check
+  const yieldPerDay = totalYield.map((v) => {
+    try {
+      return v.multiply(86_400_000).divide(durationPositionHeld)
+    } catch (error) {
+      console.error('Error calculating yieldPerDay:', error)
+      return CurrencyAmount.fromRawAmount(v.currency, 0)
+    }
+  })
 
-  const apr = yieldPerDay.map(
-    (v, i) => v.divide(deposited[i]).multiply(365).asFraction
-  )
+  // Calculate APR with safety checks for division by zero
+  const apr = yieldPerDay.map((v, i) => {
+    // Check if deposit is zero or extremely small
+    if (deposited[i].equalTo(CurrencyAmount.fromRawAmount(deposited[i].currency, 0)) || 
+        deposited[i].lessThan(CurrencyAmount.fromRawAmount(deposited[i].currency, 1))) {
+      console.log(`Skipping APR calculation for zero or near-zero deposit at index ${i}`);
+      return new Fraction(0, 1);
+    }
+    try {
+      return v.divide(deposited[i]).multiply(365).asFraction;
+    } catch (error) {
+      console.error(`Error calculating APR at index ${i}:`, error);
+      return new Fraction(0, 1);
+    }
+  })
 
   const result = {
     positionId: BigNumber.from(positionId),
@@ -188,6 +209,16 @@ export async function getLiquidityPositionStats(
   return result;
   } catch (error) {
     console.error(`Error in getLiquidityPositionStats for chain ${chainId}:`, error);
+    
+    // If it's specifically a division by zero error, provide a more helpful error message
+    if (error instanceof Error && error.message.includes('Division by zero')) {
+      console.error('This appears to be a division by zero error, likely caused by a position with no deposits or very small deposits');
+      
+      // You could potentially return a partial result with zeroed out calculations
+      // This is optional and depends on your application's needs
+      throw new Error(`Position calculation failed: Division by zero error when calculating position statistics. The position may have no deposits or very small deposits. Original error: ${error.message}`);
+    }
+    
     throw error;
   }
 }
