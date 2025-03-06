@@ -19,12 +19,24 @@ export function getPriceFromSqrtPriceX96(
 
 export async function newTokenFromTokenAddress(
   tokenAddress: string,
-  provider: providers.Provider
+  provider: providers.Provider,
+  explicitChainId?: string
 ): Promise<Token> {
   const network = await provider.getNetwork()
   const erc20 = new ERC20(tokenAddress, provider)
+  
+  // Convert chainId string to proper numeric chainId
+  const chainIdNumber = explicitChainId ? 
+    (explicitChainId === 'ethereum' ? 1 : 
+     explicitChainId === 'base' ? 8453 : 
+     parseInt(explicitChainId)) : 
+    network.chainId
+    
+  // For debugging
+  console.log(`Creating token with chainId: ${chainIdNumber}, from explicitChainId: ${explicitChainId}`)
+  
   return new Token(
-    network.chainId,
+    chainIdNumber,
     tokenAddress,
     await erc20.decimals(),
     await erc20.symbol(),
@@ -153,9 +165,10 @@ export function getCurrentAmounts(
 
 async function getIncreaseLiquidityEvents(
   provider: providers.Provider,
-  tokenId: BigNumber
+  tokenId: BigNumber,
+  chainId?: string
 ) {
-  const positionManager = new LiquidityPositionManager(provider)
+  const positionManager = new LiquidityPositionManager(provider, chainId)
   const eventFilter =
     positionManager.contract.filters.IncreaseLiquidity(tokenId)
 
@@ -170,16 +183,17 @@ async function getIncreaseLiquidityEvents(
     }
   }
 
-  const events = await getEvents(provider, tokenId, eventFilter, logToEvent)
+  const events = await getEvents(provider, tokenId, eventFilter, logToEvent, undefined, undefined, chainId)
   return events
 }
 
 export async function getDeposited(
   provider: providers.Provider,
   positionId: BigNumber,
-  pool: LiquidityPool
+  pool: LiquidityPool,
+  chainId?: string
 ) {
-  const events = await getIncreaseLiquidityEvents(provider, positionId)
+  const events = await getIncreaseLiquidityEvents(provider, positionId, chainId)
 
   let totalAmount0 = BigNumber.from(0)
   let totalAmount1 = BigNumber.from(0)
@@ -216,9 +230,10 @@ export async function getDeposited(
 
 async function getDecreaseLiquidityEvents(
   provider: providers.Provider,
-  tokenId: BigNumber
+  tokenId: BigNumber,
+  chainId?: string
 ) {
-  const positionManager = new LiquidityPositionManager(provider)
+  const positionManager = new LiquidityPositionManager(provider, chainId)
   const eventFilter =
     positionManager.contract.filters.DecreaseLiquidity(tokenId)
 
@@ -233,16 +248,17 @@ async function getDecreaseLiquidityEvents(
     }
   }
 
-  const events = await getEvents(provider, tokenId, eventFilter, logToEvent)
+  const events = await getEvents(provider, tokenId, eventFilter, logToEvent, undefined, undefined, chainId)
   return events
 }
 
 export async function getWithdrawn(
   provider: providers.Provider,
   positionId: BigNumber,
-  pool: LiquidityPool
+  pool: LiquidityPool,
+  chainId?: string
 ) {
-  const events = await getDecreaseLiquidityEvents(provider, positionId)
+  const events = await getDecreaseLiquidityEvents(provider, positionId, chainId)
 
   let totalAmount0 = BigNumber.from(0)
   let totalAmount1 = BigNumber.from(0)
@@ -287,9 +303,10 @@ export async function getWithdrawn(
 
 async function getCollectEvents(
   provider: providers.Provider,
-  tokenId: BigNumber
+  tokenId: BigNumber,
+  chainId?: string
 ) {
-  const positionManager = new LiquidityPositionManager(provider)
+  const positionManager = new LiquidityPositionManager(provider, chainId)
   const eventFilter = positionManager.contract.filters.Collect(tokenId)
 
   const logToEvent = (log: providers.Log) => {
@@ -303,7 +320,7 @@ async function getCollectEvents(
     }
   }
 
-  const events = await getEvents(provider, tokenId, eventFilter, logToEvent)
+  const events = await getEvents(provider, tokenId, eventFilter, logToEvent, undefined, undefined, chainId)
   return events
 }
 
@@ -312,13 +329,14 @@ export async function getCollected(
   positionId: BigNumber,
   pool: LiquidityPool,
   tickLower: number,
-  tickUpper: number
+  tickUpper: number,
+  chainId?: string
 ) {
   const sqrtRatioAX96 = TickMath.getSqrtRatioAtTick(tickLower)
   const sqrtRatioBX96 = TickMath.getSqrtRatioAtTick(tickUpper)
 
-  const collect_events = await getCollectEvents(provider, positionId)
-  const decrease_events = await getDecreaseLiquidityEvents(provider, positionId)
+  const collect_events = await getCollectEvents(provider, positionId, chainId)
+  const decrease_events = await getDecreaseLiquidityEvents(provider, positionId, chainId)
 
   let totalAmount0 = BigNumber.from(0)
   let totalAmount1 = BigNumber.from(0)

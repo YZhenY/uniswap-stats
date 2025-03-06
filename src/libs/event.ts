@@ -8,13 +8,14 @@ export async function getEvents<T>(
   eventFilter: EventFilter,
   logToEvent: (log: providers.Log) => T,
   fromBlock?: number,
-  toBlock?: number
+  toBlock?: number,
+  chainId?: string
 ): Promise<T[]> {
   // If a block range is not provided, we run the following procedure to find
   // all events with respect to a given account. We first retrieve all blocks
   // where the account was active. Then we search these blocks for the event.
   if (fromBlock === undefined && toBlock === undefined) {
-    const manager = new LiquidityPositionManager(provider)
+    const manager = new LiquidityPositionManager(provider, chainId)
     const account = await manager.ownerOf(tokenId)
     const activeBlocks = await getActiveBlocks(provider, account)
 
@@ -26,7 +27,8 @@ export async function getEvents<T>(
         eventFilter,
         logToEvent,
         block,
-        block
+        block,
+        chainId
       )
       events = events.concat(blockEvents)
     }

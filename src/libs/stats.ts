@@ -18,17 +18,20 @@ import { Price } from '@uniswap/sdk-core'
 
 export async function getLiquidityPositionStats(
   provider: providers.Provider,
-  positionId: BigNumberish
+  positionId: BigNumberish,
+  chainId: string
 ): Promise<LiquidityPositionStats> {
-  const manager = new LiquidityPositionManager(provider)
+  console.log(`Starting getLiquidityPositionStats for chain: ${chainId}, position: ${positionId}`);
+  try {
+  const manager = new LiquidityPositionManager(provider, chainId)
   const position = await manager.getLiquidityPosition(positionId)
-  const token0 = await newTokenFromTokenAddress(position.token0, provider)
-  const token1 = await newTokenFromTokenAddress(position.token1, provider)
+  const token0 = await newTokenFromTokenAddress(position.token0, provider, chainId)
+  const token1 = await newTokenFromTokenAddress(position.token1, provider, chainId)
 
   const lowerTickPrice = tickToPrice(token0, token1, position.tickLower)
   const upperTickPrice = tickToPrice(token0, token1, position.tickUpper)
 
-  const factory = new PoolFactory(provider)
+  const factory = new PoolFactory(provider, chainId)
   const poolAddress = await factory.getLiquidityPoolAddress(
     position.token0,
     position.token1,
@@ -64,7 +67,8 @@ export async function getLiquidityPositionStats(
   const depositedRaw = await getDeposited(
     provider,
     BigNumber.from(positionId),
-    pool
+    pool,
+    chainId
   )
   const deposited = getCurrencyAmounts(
     token0,
@@ -81,7 +85,8 @@ export async function getLiquidityPositionStats(
   const withdrawnRaw = await getWithdrawn(
     provider,
     BigNumber.from(positionId),
-    pool
+    pool,
+    chainId
   )
   const withdrawn = getCurrencyAmounts(
     token0,
@@ -102,7 +107,8 @@ export async function getLiquidityPositionStats(
     BigNumber.from(positionId),
     pool,
     position.tickLower,
-    position.tickUpper
+    position.tickUpper,
+    chainId
   )
   const collected = getCurrencyAmounts(
     token0,
@@ -157,7 +163,7 @@ export async function getLiquidityPositionStats(
     (v, i) => v.divide(deposited[i]).multiply(365).asFraction
   )
 
-  return {
+  const result = {
     positionId: BigNumber.from(positionId),
     lowerTickPrice,
     upperTickPrice,
@@ -177,5 +183,11 @@ export async function getLiquidityPositionStats(
     durationPositionHeld,
     yieldPerDay,
     apr,
+  };
+  console.log('Successfully completed getLiquidityPositionStats');
+  return result;
+  } catch (error) {
+    console.error(`Error in getLiquidityPositionStats for chain ${chainId}:`, error);
+    throw error;
   }
 }
