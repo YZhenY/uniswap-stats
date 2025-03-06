@@ -5,13 +5,16 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
-  /* font-size: calc(10px + 2vmin); */
+  padding: 40px 20px;
   color: white;
 }
 
 .error {
-  color: red;
+  color: #ff6b6b;
+  margin: 10px 0;
+  padding: 10px;
+  background-color: rgba(255, 107, 107, 0.1);
+  border-radius: 4px;
 }
 
 .loader {
@@ -30,4 +33,72 @@
 @keyframes spin {
   0% { transform: rotate(0deg); }
   100% { transform: rotate(360deg); }
+}
+
+/* Table styling */
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 20px 0;
+  background-color: rgba(255, 255, 255, 0.05);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+table td {
+  padding: 12px 15px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+table tr:last-child td {
+  border-bottom: none;
+}
+
+table tr:hover {
+  background-color: rgba(255, 255, 255, 0.08);
+}
+
+/* Form elements */
+input[type="text"] {
+  padding: 10px 15px;
+  border-radius: 4px;
+  border: 1px solid #444;
+  background-color: rgba(255, 255, 255, 0.05);
+  color: white;
+  margin-right: 10px;
+  width: 250px;
+}
+
+button {
+  padding: 10px 20px;
+  border-radius: 4px;
+  border: none;
+  background-color: #6e42c1;
+  color: white;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+button:hover {
+  background-color: #8458d5;
+  transform: translateY(-2px);
+}
+
+select {
+  background-color: rgba(255, 255, 255, 0.05);
+  color: white;
+  border: 1px solid #444;
+  border-radius: 4px;
+  padding: 8px 15px;
+}
+
+/* Pool pair and APY highlight */
+.pool-pair-row td, .apy-row td {
+  padding: 15px;
+  background-color: rgba(110, 66, 193, 0.1);
+}
+
+h1 {
+  margin-bottom: 30px;
+  color: #8458d5;
 }
