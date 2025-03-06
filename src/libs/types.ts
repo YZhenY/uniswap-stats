@@ -21,6 +21,11 @@ export type LiquidityPositionStats = {
   avgYieldPrice: Price<Token, Token>
   yieldPerDay: CurrencyAmount<Token>[]
   apr: Fraction[]
+  // New fields for impermanent loss calculations
+  impermanentLossLower: Fraction
+  impermanentLossUpper: Fraction
+  breakEvenDaysLower: number
+  breakEvenDaysUpper: number
 }
 
 export type LiquidityPosition = {

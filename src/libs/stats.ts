@@ -12,6 +12,8 @@ import {
   getWithdrawn,
   newTokenFromTokenAddress,
   toQuoteCurrencyAmount,
+  calculateImpermanentLoss,
+  calculateBreakEvenDays,
 } from './util/uniswap'
 import { tickToPrice } from '@uniswap/v3-sdk'
 import { CurrencyAmount, Fraction, Price } from '@uniswap/sdk-core'
@@ -183,6 +185,32 @@ export async function getLiquidityPositionStats(
       return new Fraction(0, 1);
     }
   })
+  
+  // Calculate impermanent loss at the range boundaries
+  console.log('Calculating impermanent loss for range boundaries...')
+  const impermanentLossLower = calculateImpermanentLoss(avgDepositPrice, lowerTickPrice)
+  const impermanentLossUpper = calculateImpermanentLoss(avgDepositPrice, upperTickPrice)
+  
+  // Get deposited value in quote currency for break-even calculations
+  const depositedQuoteAmount = toQuoteCurrencyAmount(deposited, avgDepositPrice)
+  const yieldPerDayQuoteAmount = toQuoteCurrencyAmount(yieldPerDay, avgYieldPrice)
+  
+  // Calculate break-even days for both range boundaries
+  console.log('Calculating break-even days for impermanent loss...')
+  const breakEvenDaysLower = calculateBreakEvenDays(
+    impermanentLossLower,
+    yieldPerDayQuoteAmount,
+    depositedQuoteAmount
+  )
+  
+  const breakEvenDaysUpper = calculateBreakEvenDays(
+    impermanentLossUpper,
+    yieldPerDayQuoteAmount,
+    depositedQuoteAmount
+  )
+  
+  console.log(`IL Lower: ${impermanentLossLower.multiply(100).toFixed(2)}%, Break-even: ${breakEvenDaysLower.toFixed(2)} days`)
+  console.log(`IL Upper: ${impermanentLossUpper.multiply(100).toFixed(2)}%, Break-even: ${breakEvenDaysUpper.toFixed(2)} days`)
 
   const result = {
     positionId: BigNumber.from(positionId),
@@ -204,6 +232,11 @@ export async function getLiquidityPositionStats(
     durationPositionHeld,
     yieldPerDay,
     apr,
+    // New impermanent loss metrics
+    impermanentLossLower,
+    impermanentLossUpper,
+    breakEvenDaysLower,
+    breakEvenDaysUpper,
   };
   console.log('Successfully completed getLiquidityPositionStats');
   return result;

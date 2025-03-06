@@ -114,6 +114,8 @@ const App = () => {
         stats.avgYieldPrice
       )}`,
       `apr: ${aprFormatted}`,
+      `impermanent loss lower: ${stats.impermanentLossLower.multiply(100).toFixed(2)}% (break-even in ${stats.breakEvenDaysLower === Number.POSITIVE_INFINITY ? '∞' : stats.breakEvenDaysLower.toFixed(1)} days)`,
+      `impermanent loss upper: ${stats.impermanentLossUpper.multiply(100).toFixed(2)}% (break-even in ${stats.breakEvenDaysUpper === Number.POSITIVE_INFINITY ? '∞' : stats.breakEvenDaysUpper.toFixed(1)} days)`,
     ])
   }, [stats])
 

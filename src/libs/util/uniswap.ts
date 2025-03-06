@@ -385,3 +385,88 @@ export async function getCollected(
     avgSqrtPriceX96: avgPrice,
   }
 }
+
+/**
+ * Calculate impermanent loss for a Uniswap V3 position when price moves to a specific boundary
+ * @param depositPrice The price at which the position was created
+ * @param boundaryPrice The price at the boundary (lower or upper tick)
+ * @returns Fraction representing impermanent loss as a decimal (e.g., 0.05 = 5% loss)
+ */
+export function calculateImpermanentLoss(
+  depositPrice: Price<Token, Token>,
+  boundaryPrice: Price<Token, Token>
+): Fraction {
+  try {
+    // Convert price objects to plain numbers for calculation
+    const initialPrice = parseFloat(depositPrice.toFixed(10))
+    const finalPrice = parseFloat(boundaryPrice.toFixed(10))
+    
+    if (initialPrice <= 0 || finalPrice <= 0) {
+      console.error('Invalid price values for IL calculation:', initialPrice, finalPrice)
+      return new Fraction(0, 1) // Return 0 for invalid prices
+    }
+    
+    // Calculate price ratio
+    const priceRatio = finalPrice / initialPrice
+    
+    // Calculate IL using the formula: IL = 2 * sqrt(price_ratio) / (1 + price_ratio) - 1
+    const sqrtPriceRatio = Math.sqrt(priceRatio)
+    const impermanentLossValue = (2 * sqrtPriceRatio) / (1 + priceRatio) - 1
+    
+    // Convert result to Fraction (multiply by precision factor to handle decimals)
+    const precision = 1000000
+    return new Fraction(
+      Math.round(impermanentLossValue * precision),
+      precision
+    )
+  } catch (error) {
+    console.error('Error calculating impermanent loss:', error)
+    return new Fraction(0, 1) // Return 0 in case of error
+  }
+}
+
+/**
+ * Calculate how many days are needed to recover from impermanent loss at the range boundaries
+ * @param impermanentLoss The impermanent loss as a Fraction
+ * @param yieldPerDay The yield per day as CurrencyAmount
+ * @param depositedValue The deposited value as CurrencyAmount
+ * @returns Number of days needed to break even
+ */
+export function calculateBreakEvenDays(
+  impermanentLoss: Fraction,
+  yieldPerDay: CurrencyAmount<Token>,
+  depositedValue: CurrencyAmount<Token>
+): number {
+  try {
+    // If impermanent loss is positive or zero (meaning no loss or gain), no need to break even
+    const ilValue = parseFloat(impermanentLoss.toFixed(10))
+    if (ilValue >= 0) {
+      return 0 // No days needed to break even if there's no loss
+    }
+    
+    // Convert the IL to a positive number (it's typically negative)
+    // We convert to a plain number to simplify calculations and avoid BigInt issues
+    const absoluteILValue = Math.abs(ilValue)
+    
+    // Get the deposited value as a plain number
+    const depositedValueNum = parseFloat(depositedValue.toExact())
+    
+    // Calculate the total value lost due to IL
+    const ilValueLost = depositedValueNum * absoluteILValue
+    
+    // Get yield per day as a plain number
+    const yieldPerDayNum = parseFloat(yieldPerDay.toExact())
+    
+    // Break-even days = Value lost due to IL / Yield per day
+    // To avoid division by very small numbers, check if yield is substantial
+    if (yieldPerDayNum <= 0.0000001) {
+      return Number.POSITIVE_INFINITY // Return infinity if yield is zero or very small
+    }
+    
+    const breakEvenDays = ilValueLost / yieldPerDayNum
+    return Math.max(0, breakEvenDays) // Ensure we don't return negative days
+  } catch (error) {
+    console.error('Error calculating break-even days:', error)
+    return Number.POSITIVE_INFINITY
+  }
+}
