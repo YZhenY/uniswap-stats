@@ -34,29 +34,51 @@ const PriceScale: React.FC<PriceScaleProps> = ({ lowerPrice, upperPrice, current
     return null;
   }
   
-  // For WETH/USDC or USDC/WETH type pairs, we need to ensure consistent display
-  // Get the token order from the pool pair to determine display logic
-  const isReversedPair = poolPair && (
-    poolPair.startsWith('USDC/') || 
-    poolPair.startsWith('USDT/') || 
-    poolPair.startsWith('DAI/')
-  );
-  
-  // For stablecoin/token pairs, the price range often looks more natural inverted
-  // Use pair-specific scaling for the display
-  
-  // Use custom price scaling based on the token pair
+  // Detect token pair type to determine scaling
   let displayLowerPrice = lowerPrice;
   let displayUpperPrice = upperPrice;
   let displayCurrentPrice = currentPrice;
   
-  // If we're looking at a stablecoin pair, use appropriate scaling
-  if (isReversedPair) {
-    // For stablecoin base pairs (like USDC/WETH), normalize the range
-    displayLowerPrice = lowerPrice / 10000;
-    displayUpperPrice = upperPrice / 10000;
-    displayCurrentPrice = currentPrice / 10000;
+  // The problem: different token pairs need different scaling for visualization
+  if (!poolPair) {
+    // No pool pair info available, use default scaling
+    displayLowerPrice = lowerPrice;
+    displayUpperPrice = upperPrice;
+    displayCurrentPrice = currentPrice;
+  } else {
+    // Get the token symbols from pool pair
+    const tokens = poolPair.split('/');
+    
+    // Check for specific pair types and apply appropriate scaling
+    if (poolPair.includes('WBTC') && poolPair.includes('USDC')) {
+      // WBTC/USDC pairs have high price values
+      console.log(`WBTC/USDC pair detected: ${poolPair}, applying specific scaling`);
+      if (currentPrice > 10000) { // WBTC price is typically high
+        displayLowerPrice = lowerPrice;
+        displayUpperPrice = upperPrice;
+        displayCurrentPrice = currentPrice;
+      }
+    } else if (poolPair.includes('WETH') && poolPair.includes('USDC')) {
+      // WETH/USDC pairs
+      console.log(`WETH/USDC pair detected: ${poolPair}, applying specific scaling`);
+      if (currentPrice < 1) { // USDC/WETH format (price < 1)
+        displayLowerPrice = lowerPrice;
+        displayUpperPrice = upperPrice;
+        displayCurrentPrice = currentPrice;
+      }
+    } else if (tokens[0] === 'USDC' || tokens[0] === 'USDT' || tokens[0] === 'DAI') {
+      // Stablecoin first pairs may need normalization
+      console.log(`Stablecoin base pair detected: ${poolPair}, applying normalization`);
+      // For stablecoin base pairs (like USDC/WETH), adjust the scaling if needed
+      if (currentPrice > 100) { // High values might need scaling down
+        displayLowerPrice = lowerPrice / 100;
+        displayUpperPrice = upperPrice / 100;
+        displayCurrentPrice = currentPrice / 100;
+      }
+    }
   }
+  
+  console.log(`Price scaling for ${poolPair}: Original prices [${lowerPrice}, ${currentPrice}, ${upperPrice}], Display prices [${displayLowerPrice}, ${displayCurrentPrice}, ${displayUpperPrice}]`);
 
   // Calculate min and max values for display
   // Calculate the extended range (+/- 10%)
@@ -118,8 +140,8 @@ const PriceScale: React.FC<PriceScaleProps> = ({ lowerPrice, upperPrice, current
         />
       </div>
       <div className="price-scale-labels">
-        <span className="price-min">Min: {displayLowerPrice.toFixed(2)}</span>
-        <span className="price-max">Max: {displayUpperPrice.toFixed(2)}</span>
+        <span className="price-min">Min: {displayLowerPrice < 0.1 ? displayLowerPrice.toFixed(6) : displayLowerPrice < 10 ? displayLowerPrice.toFixed(4) : displayLowerPrice.toFixed(2)}</span>
+        <span className="price-max">Max: {displayUpperPrice < 0.1 ? displayUpperPrice.toFixed(6) : displayUpperPrice < 10 ? displayUpperPrice.toFixed(4) : displayUpperPrice.toFixed(2)}</span>
       </div>
     </div>
   );
@@ -143,6 +165,19 @@ interface PositionHistoryProps {
 }
 
 const PositionHistory: React.FC<PositionHistoryProps> = ({ positions, onPositionSelect, onPositionRemove, onPositionRefresh }) => {
+  // Debug log position data when the component renders
+  React.useEffect(() => {
+    console.log('PositionHistory - Detailed data of all positions:');
+    positions.forEach((pos, index) => {
+      console.log(`Position ${index + 1}: ID ${pos.positionId} on chain ${pos.chainId}`);
+      console.log(`  Pool: ${pos.poolPair}`);
+      console.log(`  Lower Price: ${pos.lowerPrice}`);
+      console.log(`  Upper Price: ${pos.upperPrice}`);
+      console.log(`  Current Price: ${pos.currentPrice}`);
+      console.log(`  Last Refreshed: ${pos.lastRefreshed ? new Date(pos.lastRefreshed).toLocaleString() : 'N/A'}`);
+    });
+  }, [positions]);
+  
   if (positions.length === 0) {
     return null;
   }
@@ -191,7 +226,11 @@ const PositionHistory: React.FC<PositionHistoryProps> = ({ positions, onPosition
               <>
                 <div className="current-price-display">
                   <span className="current-price-label">Current Price:</span>
-                  <span className="price-value">{pos.currentPrice.toFixed(4)}</span>
+                  <span className="price-value">
+                    {pos.currentPrice < 0.1 ? pos.currentPrice.toFixed(6) : 
+                     pos.currentPrice < 10 ? pos.currentPrice.toFixed(4) : 
+                     pos.currentPrice.toFixed(2)}
+                  </span>
                 </div>
                 <PriceScale
                   lowerPrice={pos.lowerPrice}
@@ -200,8 +239,16 @@ const PositionHistory: React.FC<PositionHistoryProps> = ({ positions, onPosition
                   poolPair={pos.poolPair}
                 />
                 <div className="price-bounds">
-                  <span className="price-bound lower">Min: {pos.lowerPrice.toFixed(4)}</span>
-                  <span className="price-bound upper">Max: {pos.upperPrice.toFixed(4)}</span>
+                  <span className="price-bound lower">
+                    Min: {pos.lowerPrice < 0.1 ? pos.lowerPrice.toFixed(6) : 
+                         pos.lowerPrice < 10 ? pos.lowerPrice.toFixed(4) : 
+                         pos.lowerPrice.toFixed(2)}
+                  </span>
+                  <span className="price-bound upper">
+                    Max: {pos.upperPrice < 0.1 ? pos.upperPrice.toFixed(6) : 
+                         pos.upperPrice < 10 ? pos.upperPrice.toFixed(4) : 
+                         pos.upperPrice.toFixed(2)}
+                  </span>
                 </div>
               </>
             ) : (

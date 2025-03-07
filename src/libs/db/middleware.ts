@@ -142,8 +142,9 @@ export function withApiCache<T extends (...args: any[]) => Promise<any>>(origina
     // Get current block number
     const currentBlockNumber = await getLatestBlockNumber(provider, chainId);
     
-    // Create cache key
-    const cacheKey = `position_${chainId}_${positionId}`;
+    // Create cache key with timestamp to force refresh
+    // This ensures we always get fresh position data
+    const cacheKey = `position_${chainId}_${positionId}_${Date.now()}`;
     
     // Get last checked data for this position
     const positionKey = `${chainId}_${positionId}`;

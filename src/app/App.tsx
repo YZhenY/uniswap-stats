@@ -256,6 +256,15 @@ const App = () => {
       const provider = getProvider(chainId)
       console.log('Provider obtained:', provider)
       
+      // Clear any existing localStorage cache for this position before fetching new data
+      try {
+        const cacheKey = `getPositionStats:${JSON.stringify([provider, posId, chainId])}`;
+        localStorage.removeItem(`uniswap_cache_${cacheKey}`);
+        console.log(`Cleared cache for position ${posId} on chain ${chainId}`);
+      } catch (e) {
+        console.error('Failed to clear position cache:', e);
+      }
+      
       // Use the cached version for better performance
       const stats = await getPositionStatsWithCache(
         provider,
@@ -297,8 +306,24 @@ const App = () => {
         console.error('Error calculating APY for history:', error);
       }
       
-      // Update position history
-      updatePositionHistory(posId, chainId, poolPairString, apyString);
+      // Extract price data for the position history
+      let lowerPrice: number | undefined = undefined;
+      let upperPrice: number | undefined = undefined;
+      let currentPrice: number | undefined = undefined;
+      
+      try {
+        lowerPrice = parseFloat(stats.lowerTickPrice.toSignificant(6));
+        upperPrice = parseFloat(stats.upperTickPrice.toSignificant(6));
+        currentPrice = parseFloat(stats.currentPrice.toSignificant(6));
+        
+        console.log(`Creating position history entry for ${posId} on chain ${chainId}`);
+        console.log(`Pool pair: ${poolPairString}`);
+        console.log(`Price data - Lower: ${lowerPrice}, Upper: ${upperPrice}, Current: ${currentPrice}`);
+      } catch (error) {
+        console.error('Error extracting price data in fetchPositionStats:', error);
+      }
+      
+      updatePositionHistory(posId, chainId, poolPairString, apyString, lowerPrice, upperPrice, currentPrice);
     } catch (error: any) {
       console.error('Error fetching stats:', error)
       
@@ -328,19 +353,36 @@ const App = () => {
   }
   
   // Helper function to update position history
-  const updatePositionHistory = (posId: string, chainId: string, poolPairString: string, apyString: string) => {
-    // Extract price data if available
-    let lowerPrice: number | undefined = undefined;
-    let upperPrice: number | undefined = undefined;
-    let currentPrice: number | undefined = undefined;
-    if (stats) {
-      try {
-        // Extract prices from stats
-        lowerPrice = parseFloat(stats.lowerTickPrice.toSignificant(6));
-        upperPrice = parseFloat(stats.upperTickPrice.toSignificant(6));
-        currentPrice = parseFloat(stats.currentPrice.toSignificant(6));
-      } catch (error) {
-        console.error('Error extracting price data for history:', error);
+  const updatePositionHistory = (
+    posId: string, 
+    chainId: string, 
+    poolPairString: string, 
+    apyString: string,
+    lowerPrice?: number,
+    upperPrice?: number,
+    currentPrice?: number
+  ) => {
+    // Only extract price data from stats if not provided as parameters
+    if (!lowerPrice || !upperPrice || !currentPrice) {
+      if (stats) {
+        try {
+          // Extract prices from stats
+          if (!lowerPrice) lowerPrice = parseFloat(stats.lowerTickPrice.toSignificant(6));
+          if (!upperPrice) upperPrice = parseFloat(stats.upperTickPrice.toSignificant(6));
+          if (!currentPrice) currentPrice = parseFloat(stats.currentPrice.toSignificant(6));
+        
+          // Add detailed debug logging
+          console.log(`Position ${posId} on ${CHAINS[chainId]?.name} price data:`);
+          console.log(`  Pool Pair: ${poolPairString}`);
+          console.log(`  Lower Price: ${lowerPrice}`);
+          console.log(`  Upper Price: ${upperPrice}`);
+          console.log(`  Current Price: ${currentPrice}`);
+          console.log(`  Raw Lower Price: ${stats.lowerTickPrice.toSignificant(10)}`);
+          console.log(`  Raw Upper Price: ${stats.upperTickPrice.toSignificant(10)}`);
+          console.log(`  Raw Current Price: ${stats.currentPrice.toSignificant(10)}`);
+        } catch (error) {
+          console.error('Error extracting price data for history:', error);
+        }
       }
     }
     
@@ -491,6 +533,30 @@ const App = () => {
       console.error('Failed to save updated position history to localStorage:', error);
     }
   }
+  
+  // Clear all history entries and cache
+  const clearAllHistory = () => {
+    console.log('Clearing all position history and cache');
+    
+    // Clear position history
+    setPositionHistory([]);
+    
+    // Clear localStorage
+    try {
+      localStorage.removeItem(LOCAL_STORAGE_KEY);
+    } catch (error) {
+      console.error('Failed to clear position history from localStorage:', error);
+    }
+    
+    // Clear position cache
+    try {
+      import('../libs/db/browser-api-cache').then(({ clearPositionCache }) => {
+        clearPositionCache();
+      });
+    } catch (error) {
+      console.error('Failed to clear position cache:', error);
+    }
+  }
 
   // Special version of fetchPositionStats that doesn't modify position history
   // Used during initial loading to prevent overwriting loaded positions
@@ -524,6 +590,24 @@ const App = () => {
       <h1>UniswapV3 Stats Viewer</h1>
       
       {/* Display Position History */}
+      {positionHistory.length > 0 && (
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', marginBottom: '10px' }}>
+          <button 
+            onClick={clearAllHistory} 
+            style={{ 
+              padding: '5px 10px', 
+              backgroundColor: '#f44336', 
+              color: 'white',
+              border: 'none',
+              borderRadius: '4px',
+              cursor: 'pointer',
+              marginBottom: '10px'
+            }}
+          >
+            Clear All History & Cache
+          </button>
+        </div>
+      )}
       <PositionHistory 
         positions={positionHistory} 
         onPositionSelect={handleSelectPosition}

@@ -26,8 +26,9 @@ export async function initializeDb(): Promise<boolean> {
  * @param key Cache key
  * @param data Data to cache
  * @param ttl Time to live in seconds (defaults to config value)
+ * @param forceRefresh If true, will store even if key already exists
  */
-export async function storeApiResponse(key: string, data: any, ttl: number = CACHE_CONFIG.ttl): Promise<void> {
+export async function storeApiResponse(key: string, data: any, ttl: number = CACHE_CONFIG.ttl, forceRefresh: boolean = true): Promise<void> {
   try {
     const expiresAt = Date.now() + ttl * 1000;
     
@@ -85,6 +86,44 @@ export async function getApiResponse(key: string): Promise<any> {
   } catch (error) {
     console.error('Error getting from cache:', error);
     return null;
+  }
+}
+
+/**
+ * Clear all position-related cache data
+ */
+export async function clearPositionCache(): Promise<void> {
+  try {
+    console.log('Clearing all position-related cache data');
+    
+    // Clear memory cache
+    Array.from(memoryCache.entries()).forEach(([key, _]) => {
+      if (key.includes('position_')) {
+        memoryCache.delete(key);
+      }
+    });
+    
+    // Clear localStorage cache
+    try {
+      const keysToRemove: string[] = [];
+      
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key && key.startsWith('uniswap_cache_') && key.includes('position_')) {
+          keysToRemove.push(key);
+        }
+      }
+      
+      keysToRemove.forEach(key => {
+        localStorage.removeItem(key);
+      });
+      
+      console.log(`Cleared ${keysToRemove.length} position cache entries`);
+    } catch (error) {
+      console.error('Error clearing position cache from localStorage:', error);
+    }
+  } catch (error) {
+    console.error('Error clearing position cache:', error);
   }
 }
 
