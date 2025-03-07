@@ -1,29 +1,74 @@
 import React from 'react';
 import { CHAINS } from '../libs/config';
 
+// Helper function to format time ago
+const formatTimeAgo = (timestamp: number): string => {
+  const now = Date.now();
+  const diffInSeconds = Math.floor((now - timestamp) / 1000);
+  
+  if (diffInSeconds < 60) {
+    return 'just now';
+  } else if (diffInSeconds < 3600) {
+    const minutes = Math.floor(diffInSeconds / 60);
+    return `${minutes} ${minutes === 1 ? 'minute' : 'minutes'} ago`;
+  } else if (diffInSeconds < 86400) {
+    const hours = Math.floor(diffInSeconds / 3600);
+    return `${hours} ${hours === 1 ? 'hour' : 'hours'} ago`;
+  } else {
+    const days = Math.floor(diffInSeconds / 86400);
+    return `${days} ${days === 1 ? 'day' : 'days'} ago`;
+  }
+};
+
 // Price scale component to visualize position range and current price
 interface PriceScaleProps {
   lowerPrice?: number;
   upperPrice?: number;
   currentPrice?: number;
+  poolPair?: string;
 }
 
-const PriceScale: React.FC<PriceScaleProps> = ({ lowerPrice, upperPrice, currentPrice }) => {
+const PriceScale: React.FC<PriceScaleProps> = ({ lowerPrice, upperPrice, currentPrice, poolPair }) => {
   // If we don't have all the required data, don't render
   if (!lowerPrice || !upperPrice || !currentPrice) {
     return null;
   }
   
+  // For WETH/USDC or USDC/WETH type pairs, we need to ensure consistent display
+  // Get the token order from the pool pair to determine display logic
+  const isReversedPair = poolPair && (
+    poolPair.startsWith('USDC/') || 
+    poolPair.startsWith('USDT/') || 
+    poolPair.startsWith('DAI/')
+  );
+  
+  // For stablecoin/token pairs, the price range often looks more natural inverted
+  // Use pair-specific scaling for the display
+  
+  // Use custom price scaling based on the token pair
+  let displayLowerPrice = lowerPrice;
+  let displayUpperPrice = upperPrice;
+  let displayCurrentPrice = currentPrice;
+  
+  // If we're looking at a stablecoin pair, use appropriate scaling
+  if (isReversedPair) {
+    // For stablecoin base pairs (like USDC/WETH), normalize the range
+    displayLowerPrice = lowerPrice / 10000;
+    displayUpperPrice = upperPrice / 10000;
+    displayCurrentPrice = currentPrice / 10000;
+  }
+
+  // Calculate min and max values for display
   // Calculate the extended range (+/- 10%)
   const rangeBuffer = 0.1; // 10%
-  const minPrice = lowerPrice * (1 - rangeBuffer);
-  const maxPrice = upperPrice * (1 + rangeBuffer);
+  const minPrice = displayLowerPrice * (1 - rangeBuffer);
+  const maxPrice = displayUpperPrice * (1 + rangeBuffer);
   
   // Calculate positions as percentages for the slider
   const range = maxPrice - minPrice;
-  const lowerPct = ((lowerPrice - minPrice) / range) * 100;
-  const upperPct = ((upperPrice - minPrice) / range) * 100;
-  const currentPct = ((currentPrice - minPrice) / range) * 100;
+  const lowerPct = ((displayLowerPrice - minPrice) / range) * 100;
+  const upperPct = ((displayUpperPrice - minPrice) / range) * 100;
+  const currentPct = ((displayCurrentPrice - minPrice) / range) * 100;
   
   // Ensure percentages are within bounds
   const boundedLowerPct = Math.max(0, Math.min(100, lowerPct));
@@ -73,8 +118,8 @@ const PriceScale: React.FC<PriceScaleProps> = ({ lowerPrice, upperPrice, current
         />
       </div>
       <div className="price-scale-labels">
-        <span className="price-min">Min: {minPrice.toFixed(2)}</span>
-        <span className="price-max">Max: {maxPrice.toFixed(2)}</span>
+        <span className="price-min">Min: {displayLowerPrice.toFixed(2)}</span>
+        <span className="price-max">Max: {displayUpperPrice.toFixed(2)}</span>
       </div>
     </div>
   );
@@ -90,12 +135,14 @@ interface PositionHistoryProps {
     lowerPrice?: number;
     upperPrice?: number;
     currentPrice?: number;
+    lastRefreshed?: number;
   }>;
   onPositionSelect: (positionId: string, chainId: string) => void;
   onPositionRemove?: (positionId: string, chainId: string) => void;
+  onPositionRefresh?: (positionId: string, chainId: string) => void;
 }
 
-const PositionHistory: React.FC<PositionHistoryProps> = ({ positions, onPositionSelect, onPositionRemove }) => {
+const PositionHistory: React.FC<PositionHistoryProps> = ({ positions, onPositionSelect, onPositionRemove, onPositionRefresh }) => {
   if (positions.length === 0) {
     return null;
   }
@@ -150,6 +197,7 @@ const PositionHistory: React.FC<PositionHistoryProps> = ({ positions, onPosition
                   lowerPrice={pos.lowerPrice}
                   upperPrice={pos.upperPrice}
                   currentPrice={pos.currentPrice}
+                  poolPair={pos.poolPair}
                 />
                 <div className="price-bounds">
                   <span className="price-bound lower">Min: {pos.lowerPrice.toFixed(4)}</span>
@@ -161,8 +209,28 @@ const PositionHistory: React.FC<PositionHistoryProps> = ({ positions, onPosition
                 <span>Price data will appear here for new positions</span>
               </div>
             )}
-            <div className="timestamp">
-              {new Date(pos.timestamp).toLocaleString()}
+            <div className="position-footer">
+              <div className="timestamp">
+                {new Date(pos.timestamp).toLocaleString()}
+              </div>
+              {pos.lastRefreshed && pos.lastRefreshed !== pos.timestamp && (
+                <div className="last-refreshed-info">
+                  Updated: {formatTimeAgo(pos.lastRefreshed)}
+                  {onPositionRefresh && (
+                    <button 
+                      className="refresh-position-btn"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onPositionRefresh(pos.positionId, pos.chainId);
+                      }}
+                      title="Manually refresh this position"
+                      aria-label="Refresh position"
+                    >
+                      ↻
+                    </button>
+                  )}
+                </div>
+              )}
             </div>
           </div>
         ))}

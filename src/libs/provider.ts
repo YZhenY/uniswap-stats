@@ -19,6 +19,16 @@ export function getProvider(
     throw new Error(`Chain configuration not found for chain ID: ${chainId}`)
   }
 
+  // Check for empty RPC URL
+  if (!chainConfig.rpcUrl) {
+    console.error(`RPC URL not configured for chain: ${chainId}. Using fallback.`)
+    return new ethers.providers.JsonRpcProvider(
+      chainId === 'ethereum' 
+        ? 'https://mainnet.infura.io/v3/bed3d13c6bb948b99430721f466e6101'
+        : 'https://api.developer.coinbase.com/rpc/v1/base/E23ov1FDMyEGPVjPItiKV5DlQIHEFWr6'
+    )
+  }
+
   // Create a new provider
   const provider = new ethers.providers.JsonRpcProvider(chainConfig.rpcUrl)
   const cachedProvider = new CachedProvider(provider)

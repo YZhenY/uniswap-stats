@@ -20,10 +20,11 @@ interface PositionHistoryEntry {
   chainId: string;
   poolPair?: string;
   apy?: string;
-  timestamp: number;
+  timestamp: number;       // When the entry was created/updated
   lowerPrice?: number;
   upperPrice?: number;
   currentPrice?: number;
+  lastRefreshed?: number;  // Last time position data was refreshed
 }
 
 const LOCAL_STORAGE_KEY = 'uniswap-stats-position-history';
@@ -36,27 +37,81 @@ const App = () => {
   const [selectedChain, setSelectedChain] = useState<string>(DEFAULT_CHAIN)
   const [positionHistory, setPositionHistory] = useState<PositionHistoryEntry[]>([])
   const [poolPair, setPoolPair] = useState<string>('')
-  const [aggregatedApy, setAggregatedApy] = useState<string>('')
+  const [aggregatedApy, setAggregatedApy] = useState<string>('')  
+  const [backgroundRefreshing, setBackgroundRefreshing] = useState<{[key: string]: boolean}>({})
 
   // Load position history from localStorage when component mounts
   useEffect(() => {
     const savedHistory = localStorage.getItem(LOCAL_STORAGE_KEY);
     if (savedHistory) {
       try {
+        console.log('Found saved position history in localStorage, loading...');
         const parsedHistory = JSON.parse(savedHistory) as PositionHistoryEntry[];
-        setPositionHistory(parsedHistory);
+        console.log(`Successfully loaded ${parsedHistory.length} positions from localStorage`);
+        
+        // Make sure all entries have a lastRefreshed timestamp
+        const updatedHistory = parsedHistory.map(entry => ({
+          ...entry,
+          lastRefreshed: entry.lastRefreshed || entry.timestamp
+        }));
+        
+        setPositionHistory(updatedHistory);
         
         // Refresh price data for the first position if available
-        if (parsedHistory.length > 0) {
-          const firstPos = parsedHistory[0];
+        if (updatedHistory.length > 0) {
+          const firstPos = updatedHistory[0];
           console.log('Auto-loading first position to get price data:', firstPos.positionId);
-          handleSelectPosition(firstPos.positionId, firstPos.chainId);
+          // Just set the position ID and chain instead of calling handleSelectPosition
+          // This prevents the position history from being overwritten
+          setPositionId(firstPos.positionId);
+          setSelectedChain(firstPos.chainId);
+          // Use a special version of fetchPositionStats that won't modify position history
+          fetchPositionStatsPreserveHistory(firstPos.positionId, firstPos.chainId);
         }
       } catch (error) {
         console.error('Failed to parse position history:', error);
       }
+    } else {
+      console.log('No saved position history found in localStorage');
     }
   }, []);
+  
+  // Set up background refresh for positions
+  useEffect(() => {
+    const REFRESH_INTERVAL = 5 * 60 * 1000; // 5 minutes
+    const REFRESH_STAGGER_DELAY = 30 * 1000; // 30 seconds between position refreshes
+    
+    // Schedule the periodic check
+    const intervalId = setInterval(() => {
+      if (positionHistory.length === 0) return;
+      
+      console.log('Running scheduled position refresh check');
+      const now = Date.now();
+      
+      // Find positions that need to be refreshed
+      const positionsToRefresh = positionHistory
+        .filter(pos => !pos.lastRefreshed || (now - pos.lastRefreshed > REFRESH_INTERVAL))
+        .sort((a, b) => (a.lastRefreshed || 0) - (b.lastRefreshed || 0)); // Refresh oldest first
+      
+      if (positionsToRefresh.length === 0) {
+        console.log('No positions need refreshing at this time');
+        return;
+      }
+      
+      console.log(`${positionsToRefresh.length} positions need refreshing. Staggering refreshes...`);
+      
+      // Refresh positions with staggered timing to avoid overloading API
+      positionsToRefresh.forEach((position, index) => {
+        setTimeout(() => {
+          console.log(`Background refreshing position ${position.positionId} on ${CHAINS[position.chainId]?.name}`);
+          // We'll use a separate method that doesn't change the UI state for position ID/chain
+          backgroundRefreshPosition(position.positionId, position.chainId);
+        }, index * REFRESH_STAGGER_DELAY);
+      });
+    }, REFRESH_INTERVAL / 3); // Check more frequently than the actual refresh interval
+    
+    return () => clearInterval(intervalId);
+  }, [positionHistory]);
 
   useEffect(() => {
     if (stats === null) {
@@ -275,7 +330,9 @@ const App = () => {
   // Helper function to update position history
   const updatePositionHistory = (posId: string, chainId: string, poolPairString: string, apyString: string) => {
     // Extract price data if available
-    let lowerPrice, upperPrice, currentPrice;
+    let lowerPrice: number | undefined = undefined;
+    let upperPrice: number | undefined = undefined;
+    let currentPrice: number | undefined = undefined;
     if (stats) {
       try {
         // Extract prices from stats
@@ -287,15 +344,17 @@ const App = () => {
       }
     }
     
+    const now = Date.now();
     const newEntry: PositionHistoryEntry = {
       positionId: posId,
       chainId: chainId,
       poolPair: poolPairString,
       apy: apyString,
-      timestamp: Date.now(),
+      timestamp: now,
       lowerPrice,
       upperPrice,
-      currentPrice
+      currentPrice,
+      lastRefreshed: now
     };
     
     // Remove any existing entry for the same position and chain
@@ -319,6 +378,103 @@ const App = () => {
     }
   }
   
+  // Background refresh function that silently updates position data without changing UI state
+  const backgroundRefreshPosition = async (posId: string, chainId: string) => {
+    // Skip if this position is already being refreshed
+    const refreshKey = `${chainId}-${posId}`;
+    if (backgroundRefreshing[refreshKey]) {
+      console.log(`Position ${posId} on ${CHAINS[chainId]?.name} is already being refreshed. Skipping.`);
+      return;
+    }
+    
+    // Set background refreshing flag
+    setBackgroundRefreshing(prev => ({
+      ...prev,
+      [refreshKey]: true
+    }));
+    
+    try {
+      console.log(`Background refreshing position ${posId} on ${CHAINS[chainId]?.name}`);
+      const provider = getProvider(chainId);
+      const stats = await getPositionStatsWithCache(provider, posId, chainId);
+      
+      // Update only the position in history without changing selected position
+      let poolPairString = 'Unknown Pair';
+      try {
+        const token0 = stats.deposited[0].currency.symbol;
+        const token1 = stats.deposited[1].currency.symbol;
+        poolPairString = `${token0}/${token1}`;
+      } catch (error) {
+        console.error('Error getting pool pair for background refresh:', error);
+      }
+      
+      // Calculate APY for history
+      const yieldPerDayQuoteAmount = toQuoteCurrencyAmount(
+        stats.yieldPerDay,
+        stats.avgYieldPrice
+      );
+      const depositedQuoteAmount = toQuoteCurrencyAmount(
+        stats.deposited,
+        stats.avgDepositPrice
+      );
+      
+      let apyString = "0.00%";
+      try {
+        if (!depositedQuoteAmount.equalTo(CurrencyAmount.fromRawAmount(depositedQuoteAmount.currency, 0))) {
+          const aprQuoteAmount = yieldPerDayQuoteAmount
+            .divide(depositedQuoteAmount)
+            .multiply(365).asFraction;
+          apyString = `${aprQuoteAmount.multiply(100).toFixed(2)}%`;
+        }
+      } catch (error) {
+        console.error('Error calculating APY for background refresh:', error);
+      }
+      
+      // Extract price data
+      let lowerPrice: number | undefined = undefined;
+      let upperPrice: number | undefined = undefined;
+      let currentPrice: number | undefined = undefined;
+      try {
+        lowerPrice = parseFloat(stats.lowerTickPrice.toSignificant(6));
+        upperPrice = parseFloat(stats.upperTickPrice.toSignificant(6));
+        currentPrice = parseFloat(stats.currentPrice.toSignificant(6));
+      } catch (error) {
+        console.error('Error extracting price data for background refresh:', error);
+      }
+      
+      // Update the position in history
+      const now = Date.now();
+      const updatedHistory = positionHistory.map(pos => {
+        // If this is the position we're refreshing, update it
+        if (pos.positionId === posId && pos.chainId === chainId) {
+          return {
+            ...pos,
+            poolPair: poolPairString,
+            apy: apyString,
+            lowerPrice,
+            upperPrice,
+            currentPrice,
+            lastRefreshed: now
+          };
+        }
+        return pos;
+      });
+      
+      // Update state and localStorage
+      setPositionHistory(updatedHistory);
+      localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(updatedHistory));
+      console.log(`Successfully refreshed position ${posId} on ${CHAINS[chainId]?.name} in background`);
+    } catch (error) {
+      console.error(`Failed to refresh position ${posId} on ${CHAINS[chainId]?.name} in background:`, error);
+    } finally {
+      // Clear background refreshing flag
+      setBackgroundRefreshing(prev => ({
+        ...prev,
+        [refreshKey]: false
+      }));
+    }
+  };
+
   // Function to remove a position from history
   const removePositionFromHistory = (posId: string, chainId: string) => {
     // Filter out the position to be removed
@@ -336,6 +492,33 @@ const App = () => {
     }
   }
 
+  // Special version of fetchPositionStats that doesn't modify position history
+  // Used during initial loading to prevent overwriting loaded positions
+  const fetchPositionStatsPreserveHistory = async (posId: string, chainId: string) => {
+    setLoading(true)
+    try {
+      console.log(`Loading initial position stats (preserving history) for chain: ${chainId}, position ID: ${posId}`)
+      const provider = getProvider(chainId)
+      
+      // Use the cached version for better performance
+      const stats = await getPositionStatsWithCache(
+        provider,
+        posId,
+        chainId
+      )
+      setStats(stats)
+      console.log('Initial stats loaded successfully')
+      
+      // Do NOT update position history here - that's the key difference
+      
+    } catch (error: any) {
+      console.error('Error fetching initial stats:', error)
+      setStats(null)
+    } finally {
+      setLoading(false)
+    }
+  }
+
   return (
     <div className="App">
       <h1>UniswapV3 Stats Viewer</h1>
@@ -345,6 +528,7 @@ const App = () => {
         positions={positionHistory} 
         onPositionSelect={handleSelectPosition}
         onPositionRemove={removePositionFromHistory}
+        onPositionRefresh={backgroundRefreshPosition}
       />
       <div style={{ marginBottom: '20px' }}>
         <label style={{ marginRight: '10px' }}>Select Chain:</label>
