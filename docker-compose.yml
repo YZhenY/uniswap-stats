@@ -16,6 +16,22 @@ services:
     restart: always
     networks:
       - uniswap-network
+      
+  webapp:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: uniswap-stats-webapp
+    ports:
+      - "3000:3000"
+      - "3001:3001"
+    environment:
+      - MONGO_URI=mongodb://admin:password@mongodb:27017/uniswap_stats?authSource=admin
+    depends_on:
+      - mongodb
+    restart: always
+    networks:
+      - uniswap-network
 
 networks:
   uniswap-network:

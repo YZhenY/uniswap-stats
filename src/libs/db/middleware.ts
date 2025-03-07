@@ -126,28 +126,27 @@ async function getLatestBlockNumber(provider: Provider, chainId: string): Promis
   }
 }
 
-export function withApiCache<T extends (...args: any[]) => Promise<any>>(originalFn: T): T {
-  return async function(...args: any[]): Promise<any> {
-    // Extract parameters from args
-    // For getLiquidityPositionStats, args are [provider, positionId, chainId]
-    const provider = args[0] as Provider;
-    const positionId = args[1]?.toString();
-    const chainId = args[2]?.toString();
+type PositionStatsFn = (provider: Provider, positionId: BigNumberish, chainId: string) => Promise<LiquidityPositionStats>;
+
+export function withApiCache(originalFn: PositionStatsFn): PositionStatsFn {
+  return async function(provider: Provider, positionId: BigNumberish, chainId: string): Promise<LiquidityPositionStats> {
+    // Convert parameters as needed
+    const positionIdStr = positionId.toString();
+    const chainIdStr = chainId.toString();
     
-    if (!positionId || !chainId || !provider) {
+    if (!positionIdStr || !chainIdStr || !provider) {
       console.warn('Missing provider, position ID or chain ID for caching');
-      return originalFn(...args);
+      return originalFn(provider, positionId, chainId);
     }
     
     // Get current block number
-    const currentBlockNumber = await getLatestBlockNumber(provider, chainId);
+    const currentBlockNumber = await getLatestBlockNumber(provider, chainIdStr);
     
-    // Create cache key with timestamp to force refresh
-    // This ensures we always get fresh position data
-    const cacheKey = `position_${chainId}_${positionId}_${Date.now()}`;
+    // Create cache key without timestamp to enable proper caching
+    const cacheKey = `position_${chainIdStr}_${positionIdStr}`;
     
     // Get last checked data for this position
-    const positionKey = `${chainId}_${positionId}`;
+    const positionKey = `${chainIdStr}_${positionIdStr}`;
     const lastChecked = positionLastCheckedMap.get(positionKey) || { blockNumber: 0, timestamp: 0 };
     
     // Try to get cached data
@@ -162,8 +161,8 @@ export function withApiCache<T extends (...args: any[]) => Promise<any>>(origina
     // Check if position has had any updates since we last checked
     const positionHasUpdates = await hasPositionUpdates(
       provider,
-      positionId,
-      chainId,
+      positionIdStr, // Use positionIdStr to match the function signature
+      chainIdStr,
       lastChecked.blockNumber
     );
     
@@ -171,12 +170,12 @@ export function withApiCache<T extends (...args: any[]) => Promise<any>>(origina
     let useCachedData = false;
     
     if (cachedData && !positionHasUpdates) {
-      console.log(`Using cached data for position ${positionId} on chain ${chainId} (no position updates)`);
+      console.log(`Using cached data for position ${positionIdStr} on chain ${chainIdStr} (no position updates)`);
       useCachedData = true;
     } else if (positionHasUpdates) {
-      console.log(`Position ${positionId} on chain ${chainId} has updates since block ${lastChecked.blockNumber}`);
+      console.log(`Position ${positionIdStr} on chain ${chainIdStr} has updates since block ${lastChecked.blockNumber}`);
     } else {
-      console.log(`No cached data found for position ${positionId} on chain ${chainId}`);
+      console.log(`No cached data found for position ${positionIdStr} on chain ${chainIdStr}`);
     }
     
     // Return cached data if valid
@@ -185,8 +184,8 @@ export function withApiCache<T extends (...args: any[]) => Promise<any>>(origina
     }
     
     // Execute original function to get fresh data
-    console.log(`Fetching fresh data for position ${positionId} on chain ${chainId}`);
-    const result = await originalFn(...args);
+    console.log(`Fetching fresh data for position ${positionIdStr} on chain ${chainIdStr}`);
+    const result = await originalFn(provider, positionId, chainId);
     
     // Store in cache with current block number metadata
     try {
@@ -206,13 +205,13 @@ export function withApiCache<T extends (...args: any[]) => Promise<any>>(origina
         timestamp: Date.now()
       });
       
-      console.log(`Updated cache for position ${positionId} on chain ${chainId} at block ${currentBlockNumber}`);
+      console.log(`Updated cache for position ${positionIdStr} on chain ${chainIdStr} at block ${currentBlockNumber}`);
     } catch (error) {
       console.error(`Error storing in cache:`, error);
     }
     
     return result;
-  } as T;
+  };
 }
 
 /**
@@ -231,6 +230,6 @@ export let getCachedLiquidityPositionStats = async (
  * Initialize the cached function with the original implementation
  * @param originalFn The original getLiquidityPositionStats function
  */
-export function initializeCachedFunctions(originalFn: any) {
+export function initializeCachedFunctions(originalFn: (provider: Provider, positionId: BigNumberish, chainId: string) => Promise<LiquidityPositionStats>) {
   getCachedLiquidityPositionStats = withApiCache(originalFn);
 }

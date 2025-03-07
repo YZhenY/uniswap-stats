@@ -44,3 +44,6 @@ export const CACHE_CONFIG = {
   checkPeriod: 600, // Default: 10 minutes
   useDb: true, // Enable by default
 }
+
+// API config
+export const API_BASE_URL = 'http://localhost:3001'

@@ -9,10 +9,15 @@
     "@uniswap/sdk-core": "^7.1.0",
     "@uniswap/smart-order-router": "^4.14.3",
     "@uniswap/v3-sdk": "^3.21.0",
+    "concurrently": "^9.1.2",
+    "cors": "^2.8.5",
     "dotenv": "^16.4.7",
     "ethers": "^5.7.2",
+    "express": "^4.21.2",
+    "helmet": "^8.0.0",
     "mongodb": "^6.14.2",
     "mongoose": "^8.12.1",
+    "morgan": "^1.10.0",
     "os-browserify": "^0.3.0",
     "path-browserify": "^1.0.1",
     "react": "^18.2.0",
@@ -27,7 +32,9 @@
     "build": "react-app-rewired build",
     "lint": "eslint .",
     "install:chain": "curl -L https://foundry.paradigm.xyz | bash && clear && echo $0 | exec && foundryup",
-    "start:chain": "anvil --chain-id 1337 --fork-url"
+    "start:chain": "anvil --chain-id 1337 --fork-url",
+    "start:api": "node server.js",
+    "dev": "concurrently \"npm run start\" \"npm run start:api\""
   },
   "eslintConfig": {
     "extends": [

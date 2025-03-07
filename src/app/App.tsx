@@ -12,6 +12,7 @@ import { CurrencyAmount, Fraction, Token } from '@uniswap/sdk-core'
 import { CHAINS, DEFAULT_CHAIN } from '../libs/config'
 import PositionHistory from './PositionHistory'
 import './PositionHistory.css'
+import { getPositionHistory, savePositionHistory, deleteAllPositionHistory } from '../libs/api/positionHistory'
 
 /* eslint-disable */
 // Define a type for the position history entries
@@ -40,17 +41,16 @@ const App = () => {
   const [aggregatedApy, setAggregatedApy] = useState<string>('')  
   const [backgroundRefreshing, setBackgroundRefreshing] = useState<{[key: string]: boolean}>({})
 
-  // Load position history from localStorage when component mounts
+  // Load position history from MongoDB API when component mounts
   useEffect(() => {
-    const savedHistory = localStorage.getItem(LOCAL_STORAGE_KEY);
-    if (savedHistory) {
+    const loadPositionHistory = async () => {
       try {
-        console.log('Found saved position history in localStorage, loading...');
-        const parsedHistory = JSON.parse(savedHistory) as PositionHistoryEntry[];
-        console.log(`Successfully loaded ${parsedHistory.length} positions from localStorage`);
+        console.log('Fetching position history from MongoDB API...');
+        const positions = await getPositionHistory();
+        console.log(`Successfully loaded ${positions.length} positions from MongoDB`);
         
         // Make sure all entries have a lastRefreshed timestamp
-        const updatedHistory = parsedHistory.map(entry => ({
+        const updatedHistory = positions.map(entry => ({
           ...entry,
           lastRefreshed: entry.lastRefreshed || entry.timestamp
         }));
@@ -69,11 +69,22 @@ const App = () => {
           fetchPositionStatsPreserveHistory(firstPos.positionId, firstPos.chainId);
         }
       } catch (error) {
-        console.error('Failed to parse position history:', error);
+        console.error('Failed to load position history from API:', error);
+        // Fall back to localStorage if API fails
+        const savedHistory = localStorage.getItem(LOCAL_STORAGE_KEY);
+        if (savedHistory) {
+          try {
+            console.log('Falling back to localStorage position history...');
+            const parsedHistory = JSON.parse(savedHistory) as PositionHistoryEntry[];
+            setPositionHistory(parsedHistory);
+          } catch (e) {
+            console.error('Failed to parse position history from localStorage:', e);
+          }
+        }
       }
-    } else {
-      console.log('No saved position history found in localStorage');
-    }
+    };
+    
+    loadPositionHistory();
   }, []);
   
   // Set up background refresh for positions
@@ -353,7 +364,7 @@ const App = () => {
   }
   
   // Helper function to update position history
-  const updatePositionHistory = (
+  const updatePositionHistory = async (
     posId: string, 
     chainId: string, 
     poolPairString: string, 
@@ -399,24 +410,45 @@ const App = () => {
       lastRefreshed: now
     };
     
-    // Remove any existing entry for the same position and chain
-    const filteredHistory = positionHistory.filter(
-      entry => !(entry.positionId === posId && entry.chainId === chainId)
-    );
-    
-    // Add new entry at the beginning
-    const updatedHistory = [newEntry, ...filteredHistory];
-    
-    // Limit to 10 entries to prevent localStorage from growing too large
-    const limitedHistory = updatedHistory.slice(0, 10);
-    
-    setPositionHistory(limitedHistory);
-    
-    // Save to localStorage
+    // Save to MongoDB API
     try {
-      localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(limitedHistory));
+      console.log('Saving position history to MongoDB...');
+      await savePositionHistory(newEntry);
+      
+      // Update local state with the new entry
+      // Remove any existing entry for the same position and chain
+      const filteredHistory = positionHistory.filter(
+        entry => !(entry.positionId === posId && entry.chainId === chainId)
+      );
+      
+      // Add new entry at the beginning
+      const updatedHistory = [newEntry, ...filteredHistory];
+      
+      // Limit to 10 entries
+      const limitedHistory = updatedHistory.slice(0, 10);
+      
+      setPositionHistory(limitedHistory);
     } catch (error) {
-      console.error('Failed to save position history to localStorage:', error);
+      console.error('Failed to save position history to MongoDB:', error);
+      
+      // Fall back to localStorage
+      try {
+        // Remove any existing entry for the same position and chain
+        const filteredHistory = positionHistory.filter(
+          entry => !(entry.positionId === posId && entry.chainId === chainId)
+        );
+        
+        // Add new entry at the beginning
+        const updatedHistory = [newEntry, ...filteredHistory];
+        
+        // Limit to 10 entries
+        const limitedHistory = updatedHistory.slice(0, 10);
+        
+        setPositionHistory(limitedHistory);
+        localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(limitedHistory));
+      } catch (e) {
+        console.error('Failed to save position history to localStorage:', e);
+      }
     }
   }
   
@@ -535,17 +567,25 @@ const App = () => {
   }
   
   // Clear all history entries and cache
-  const clearAllHistory = () => {
+  const clearAllHistory = async () => {
     console.log('Clearing all position history and cache');
+    setLoading(true);
     
-    // Clear position history
-    setPositionHistory([]);
-    
-    // Clear localStorage
+    // Clear position history in MongoDB
     try {
-      localStorage.removeItem(LOCAL_STORAGE_KEY);
+      console.log('Clearing all position history from MongoDB...');
+      await deleteAllPositionHistory();
+      setPositionHistory([]);
     } catch (error) {
-      console.error('Failed to clear position history from localStorage:', error);
+      console.error('Failed to clear position history from MongoDB:', error);
+      
+      // Fall back to clearing localStorage
+      try {
+        localStorage.removeItem(LOCAL_STORAGE_KEY);
+        setPositionHistory([]);
+      } catch (e) {
+        console.error('Failed to clear position history from localStorage:', e);
+      }
     }
     
     // Clear position cache
@@ -556,6 +596,8 @@ const App = () => {
     } catch (error) {
       console.error('Failed to clear position cache:', error);
     }
+    
+    setLoading(false);
   }
 
   // Special version of fetchPositionStats that doesn't modify position history
