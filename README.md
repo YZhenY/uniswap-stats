@@ -11,6 +11,7 @@ Available at: https://matthiasgeihs.github.io/uniswap-stats/
   - Base
   - Ethereum Mainnet
 - Calculate APR, yield, and other key metrics
+- Browser-compatible configuration with fallbacks
 
 > __Note__ that this doesn't use an indexer service (yet) and instead builds an index itself.
 > The first run will take a while, depending on the number of transactions of the position owner's account.
@@ -38,9 +39,22 @@ The application now features a MongoDB database for persistent storage of positi
    - Password: `password`
    - Database: `uniswap_stats`
 
-### Environment Configuration
+### Configuration
 
-Create a `.env` file in the root directory based on the provided `.env.example` template:
+#### Frontend Configuration
+
+The frontend application uses hardcoded configuration values for browser compatibility. These values are defined in `src/libs/config.ts` and include:
+
+- RPC URLs for Ethereum and Base networks
+- Contract addresses for pool factories and position managers
+- Default chain selection
+- Database and cache settings
+
+If you need to customize these values for your production deployment, modify the constants directly in `src/libs/config.ts`.
+
+#### Backend Configuration (Server Mode)
+
+If running in server mode with Node.js, you can create a `.env` file in the root directory based on the provided `.env.example` template:
 
 ```bash
 # Copy the example file
@@ -50,7 +64,7 @@ cp .env.example .env
 vim .env  # or use any editor of your choice
 ```
 
-The `.env` file should include the following variables:
+The `.env` file includes the following variables:
 
 ```
 # RPC URLs (add your own API keys)
@@ -75,5 +89,6 @@ USE_DB_CACHE=true  # Whether to use database for cache persistence
 DEFAULT_CHAIN=ethereum
 ```
 
+> **NOTE**: The environment variables are used only for server-side configuration. Browser-based code uses the hardcoded values in `config.ts` for compatibility reasons, as `process.env` is not available in browser environments.
+
 > **IMPORTANT**: Never commit your `.env` file to git. It's already added to `.gitignore` to prevent accidental commits.
-```
