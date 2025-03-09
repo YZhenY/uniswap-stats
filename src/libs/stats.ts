@@ -18,6 +18,35 @@ import {
 import { tickToPrice } from '@uniswap/v3-sdk'
 import { CurrencyAmount, Fraction, Price } from '@uniswap/sdk-core'
 
+// Simple block timestamp cache to avoid fetching the same block multiple times
+const blockTimestampCache: Record<string, number> = {}
+
+// Helper function to get cached block timestamp
+async function getCachedBlockTimestamp(
+  provider: providers.Provider, 
+  blockNumber: number
+): Promise<number> {
+  // Get network information safely
+  let chainId: number;
+  try {
+    // For ethers v5 Provider with network property
+    chainId = (provider as any).network?.chainId || 1; // Default to Ethereum mainnet if not available
+  } catch (error) {
+    console.warn('Could not get chainId from provider, defaulting to 1:', error);
+    chainId = 1;
+  }
+  const cacheKey = `${chainId}-${blockNumber}`
+  
+  if (blockTimestampCache[cacheKey] !== undefined) {
+    return blockTimestampCache[cacheKey]
+  }
+  
+  const block = await provider.getBlock(blockNumber)
+  blockTimestampCache[cacheKey] = block.timestamp
+  
+  return block.timestamp
+}
+
 // Original implementation
 export async function getLiquidityPositionStats(
   provider: providers.Provider,
@@ -213,6 +242,65 @@ export async function getLiquidityPositionStats(
   console.log(`IL Lower: ${impermanentLossLower.multiply(100).toFixed(2)}%, Break-even: ${breakEvenDaysLower.toFixed(2)} days`)
   console.log(`IL Upper: ${impermanentLossUpper.multiply(100).toFixed(2)}%, Break-even: ${breakEvenDaysUpper.toFixed(2)} days`)
 
+  // Calculate 24-hour fees
+  console.log('Calculating 24-hour fees...')
+  const oneDayAgoTimestamp = Math.floor(Date.now() / 1000) - 86400 // 24 hours in seconds
+  let dailyAmount0 = BigNumber.from(0)
+  let dailyAmount1 = BigNumber.from(0)
+  
+  // Use the raw events that we already fetched to calculate 24-hour fees
+  if (collectedRaw.rawEvents) {
+    // Process collect events from last 24 hours
+    for (const event of collectedRaw.rawEvents.collectEvents) {
+      // Get block timestamp
+      const blockTimestamp = await getCachedBlockTimestamp(provider, event.blockNumber)
+      
+      if (blockTimestamp >= oneDayAgoTimestamp) {
+        console.log(`Found 24hr collection event at block ${event.blockNumber}, timestamp ${new Date(blockTimestamp * 1000).toISOString()}`)
+        dailyAmount0 = dailyAmount0.add(event.amount0)
+        dailyAmount1 = dailyAmount1.add(event.amount1)
+      }
+    }
+    
+    // Process decrease events from last 24 hours
+    for (const event of collectedRaw.rawEvents.decreaseEvents) {
+      const blockTimestamp = await getCachedBlockTimestamp(provider, event.blockNumber)
+      
+      if (blockTimestamp >= oneDayAgoTimestamp) {
+        console.log(`Found 24hr decrease event at block ${event.blockNumber}, timestamp ${new Date(blockTimestamp * 1000).toISOString()}`)
+        dailyAmount0 = dailyAmount0.add(event.amount0)
+        dailyAmount1 = dailyAmount1.add(event.amount1)
+      }
+    }
+  }
+  
+  const dailyCollected = getCurrencyAmounts(
+    token0,
+    dailyAmount0,
+    token1,
+    dailyAmount1
+  )
+  
+  // Calculate daily APR (annualized daily yield)
+  const dailyApr = dailyCollected.map((v, i) => {
+    // Check if deposit is zero or extremely small
+    if (deposited[i].equalTo(CurrencyAmount.fromRawAmount(deposited[i].currency, 0)) || 
+        deposited[i].lessThan(CurrencyAmount.fromRawAmount(deposited[i].currency, 1))) {
+      console.log(`Skipping daily APR calculation for zero or near-zero deposit at index ${i}`)
+      return new Fraction(0, 1)
+    }
+    try {
+      // Since this is already daily yield, multiply by 365 to get annual rate
+      return v.divide(deposited[i]).multiply(365).asFraction
+    } catch (error) {
+      console.error(`Error calculating daily APR at index ${i}:`, error)
+      return new Fraction(0, 1)
+    }
+  })
+  
+  console.log(`Daily fees: ${dailyCollected[0].toExact()} ${token0.symbol}, ${dailyCollected[1].toExact()} ${token1.symbol}`)
+  console.log(`Daily APR: ${dailyApr[0].multiply(100).toFixed(2)}% for ${token0.symbol}, ${dailyApr[1].multiply(100).toFixed(2)}% for ${token1.symbol}`)
+  
   const result = {
     positionId: BigNumber.from(positionId),
     lowerTickPrice,
@@ -238,6 +326,9 @@ export async function getLiquidityPositionStats(
     impermanentLossUpper,
     breakEvenDaysLower,
     breakEvenDaysUpper,
+    // New 24-hour fee metrics
+    dailyCollected,
+    dailyApr,
   };
   console.log('Successfully completed getLiquidityPositionStats');
   return result;

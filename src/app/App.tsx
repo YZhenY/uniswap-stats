@@ -21,6 +21,7 @@ interface PositionHistoryEntry {
   chainId: string;
   poolPair?: string;
   apy?: string;
+  dailyApy?: string;      // 24-hour APY 
   timestamp: number;       // When the entry was created/updated
   lowerPrice?: number;
   upperPrice?: number;
@@ -38,7 +39,9 @@ const App = () => {
   const [selectedChain, setSelectedChain] = useState<string>(DEFAULT_CHAIN)
   const [positionHistory, setPositionHistory] = useState<PositionHistoryEntry[]>([])
   const [poolPair, setPoolPair] = useState<string>('')
-  const [aggregatedApy, setAggregatedApy] = useState<string>('')  
+  const [aggregatedApy, setAggregatedApy] = useState<string>('')
+  const [dailyApy, setDailyApy] = useState<string>('')  
+  const [dailyAprFormatted, setDailyAprFormatted] = useState<string>('N/A')
   const [backgroundRefreshing, setBackgroundRefreshing] = useState<{[key: string]: boolean}>({})
 
   // Load position history from MongoDB API when component mounts
@@ -196,6 +199,60 @@ const App = () => {
       return formattedApr;
     })()
     
+    // Calculate and format 24-hour APR
+    const dailyAprFmt = (() => {
+      // Check if dailyApr exists
+      if (!stats.dailyApr || !stats.dailyCollected) {
+        return 'N/A'
+      }
+      
+      const dailyYieldQuoteAmount = toQuoteCurrencyAmount(
+        stats.dailyCollected,
+        stats.avgYieldPrice // Use same price as overall yield for consistency
+      )
+      
+      const depositedQuoteAmount = toQuoteCurrencyAmount(
+        stats.deposited,
+        stats.avgDepositPrice
+      )
+      
+      // Add safety check to prevent division by zero when calculating dailyAprQuoteAmount
+      let dailyAprQuoteAmount: Fraction;
+      try {
+        if (depositedQuoteAmount.equalTo(CurrencyAmount.fromRawAmount(depositedQuoteAmount.currency, 0)) || 
+            depositedQuoteAmount.lessThan(CurrencyAmount.fromRawAmount(depositedQuoteAmount.currency, 1))) {
+          console.log('UI: Skipping daily quote APR calculation for zero or near-zero deposit')
+          dailyAprQuoteAmount = new Fraction(0, 1);
+        } else {
+          dailyAprQuoteAmount = dailyYieldQuoteAmount
+            .divide(depositedQuoteAmount)
+            .multiply(365).asFraction;
+        }
+      } catch (error) {
+        console.error('UI: Error calculating daily quote APR:', error);
+        dailyAprQuoteAmount = new Fraction(0, 1);
+      }
+      
+      const fmtApr = (apr: { value: Fraction; currency: Token }) =>
+        `${apr.value.multiply(100).toFixed(2)}% ${apr.currency.symbol}`
+      
+      const dailyAprValues = stats.dailyApr.map((apr, i) => ({
+        value: apr,
+        currency: stats.dailyCollected[i].currency,
+      }))
+      
+      // Save daily APY for position history display
+      setDailyApy(`${dailyAprQuoteAmount.multiply(100).toFixed(2)}%`)
+      
+      const formattedDailyApr = `${dailyAprValues.map(fmtApr).join(' ')} (= ${fmtApr({
+        value: dailyAprQuoteAmount,
+        currency: dailyYieldQuoteAmount.currency,
+      })} at ${formatBaseCurrencyPrice(stats.avgYieldPrice)})`;
+      
+      return formattedDailyApr;
+    })()
+    setDailyAprFormatted(dailyAprFmt)
+    
     // Extract and set pool pair information
     try {
       const token0 = stats.deposited[0].currency.symbol;
@@ -238,6 +295,12 @@ const App = () => {
         stats.avgYieldPrice
       )}`,
       `apr: ${aprFormatted}`,
+      // Add 24-hour fee information
+      `24hr fees: ${formatCurrencyAmountsWithQuote(
+        stats.dailyCollected,
+        stats.avgYieldPrice
+      )}`,
+      `24hr apr: ${dailyAprFormatted}`,
       `impermanent loss lower: ${stats.impermanentLossLower.multiply(100).toFixed(2)}% (break-even in ${stats.breakEvenDaysLower === Number.POSITIVE_INFINITY ? '∞' : stats.breakEvenDaysLower.toFixed(1)} days)`,
       `impermanent loss upper: ${stats.impermanentLossUpper.multiply(100).toFixed(2)}% (break-even in ${stats.breakEvenDaysUpper === Number.POSITIVE_INFINITY ? '∞' : stats.breakEvenDaysUpper.toFixed(1)} days)`,
     ])
@@ -334,7 +397,7 @@ const App = () => {
         console.error('Error extracting price data in fetchPositionStats:', error);
       }
       
-      updatePositionHistory(posId, chainId, poolPairString, apyString, lowerPrice, upperPrice, currentPrice);
+      updatePositionHistory(posId, chainId, poolPairString, apyString, lowerPrice, upperPrice, currentPrice, dailyApy);
     } catch (error: any) {
       console.error('Error fetching stats:', error)
       
@@ -371,7 +434,8 @@ const App = () => {
     apyString: string,
     lowerPrice?: number,
     upperPrice?: number,
-    currentPrice?: number
+    currentPrice?: number,
+    dailyApyString?: string
   ) => {
     // Only extract price data from stats if not provided as parameters
     if (!lowerPrice || !upperPrice || !currentPrice) {
@@ -403,6 +467,7 @@ const App = () => {
       chainId: chainId,
       poolPair: poolPairString,
       apy: apyString,
+      dailyApy: dailyApyString, // Add 24-hour APY
       timestamp: now,
       lowerPrice,
       upperPrice,

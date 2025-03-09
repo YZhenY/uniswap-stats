@@ -153,6 +153,7 @@ interface PositionHistoryProps {
     chainId: string;
     poolPair?: string;
     apy?: string;
+    dailyApy?: string; // New field for 24-hour APY
     timestamp: number;
     lowerPrice?: number;
     upperPrice?: number;
@@ -219,6 +220,11 @@ const PositionHistory: React.FC<PositionHistoryProps> = ({ positions, onPosition
             {pos.apy && (
               <div className="apy-info">
                 APY: {pos.apy}
+                {pos.dailyApy && (
+                  <span className="daily-apy">
+                    24h APY: {pos.dailyApy}
+                  </span>
+                )}
               </div>
             )}
             {/* Price Scale Visualization */}

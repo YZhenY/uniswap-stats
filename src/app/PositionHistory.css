@@ -353,3 +353,15 @@
   outline: none;
   box-shadow: 0 0 0 2px rgba(220, 53, 69, 0.25);
 }
+
+/* 24-hour APY styling */
+.apy-info {
+  display: flex;
+  flex-direction: column;
+}
+
+.daily-apy {
+  font-size: 0.85rem;
+  color: rgb(255, 204, 102); /* Different color for daily APY */
+  margin-top: 3px;
+}

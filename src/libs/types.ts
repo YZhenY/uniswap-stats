@@ -26,6 +26,9 @@ export type LiquidityPositionStats = {
   impermanentLossUpper: Fraction
   breakEvenDaysLower: number
   breakEvenDaysUpper: number
+  // New fields for 24-hour fee metrics
+  dailyCollected: CurrencyAmount<Token>[]
+  dailyApr: Fraction[]
 }
 
 export type LiquidityPosition = {

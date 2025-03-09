@@ -342,6 +342,8 @@ export async function getCollected(
   let totalAmount1 = BigNumber.from(0)
   let totalLiquidity = BigNumber.from(0)
   let totalWeightedPrice = BigNumber.from(0)
+  let dateFirstCollected: Date | undefined = undefined
+  
   for (const event of collect_events) {
     totalAmount0 = totalAmount0.add(event.amount0)
     totalAmount1 = totalAmount1.add(event.amount1)
@@ -360,6 +362,12 @@ export async function getCollected(
 
     totalLiquidity = totalLiquidity.add(liquidity)
     totalWeightedPrice = totalWeightedPrice.add(sqrtPriceX96.mul(liquidity))
+    
+    // Track first collection date
+    if (!dateFirstCollected) {
+      const block = await provider.getBlock(event.blockNumber)
+      dateFirstCollected = new Date(block.timestamp * 1000)
+    }
   }
 
   for (const event of decrease_events) {
@@ -383,6 +391,9 @@ export async function getCollected(
     amount0: totalAmount0,
     amount1: totalAmount1,
     avgSqrtPriceX96: avgPrice,
+    dateFirstCollected,
+    // Return the raw events for reuse in 24-hour calculations
+    rawEvents: { collectEvents: collect_events, decreaseEvents: decrease_events }
   }
 }
 
